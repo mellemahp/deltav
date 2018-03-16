@@ -1,0 +1,6 @@
+[package]
+name = "deltav"
+version = "0.1.0"
+authors = ["Hunter Mellema <mellemahp@gmail.com>"]
+
+[dependencies]

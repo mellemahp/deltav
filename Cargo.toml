@@ -1,7 +1,8 @@
 [package]
 name = "deltav"
 version = "0.1.0"
-authors = ["Hunter Mellema <mellemahp@gmail.com>"]
+authors = ["Hunter Mellema"]
+license = "MIT/Apache-2.0"
 
 [dependencies]
 structopt = { version = "0.2", default-features = false }

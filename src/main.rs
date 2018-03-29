@@ -49,8 +49,8 @@ struct OrbitConfig {
     peri: Option<f32>,
     apo: Option<f32>,
     ecc: Option<f32>,
-    vel_peri1: Option<f32>,
-    vel_apo1: Option<f32>,
+    vel_p: Option<f32>,
+    vel_a: Option<f32>,
     spk_id: Option<i32>,
 }
 
@@ -68,82 +68,105 @@ struct Orbit {
     ra: f32,
     rp: f32,
     mu: f32,
-    h: Option<f32>,
+    h: f32,
+    ecc: f32,
 }
 
 impl Orbit {
     fn from_config(config: OrbitConfig) -> Orbit {
         let mu = find_mu(&config.spk_id);
         let mut orbit = match config {
-            OrbitConfig { peri: Some(_), apo: Some(_), ..} => {
-                Ok(Orbit{
-                    ra: config.apo.unwrap(),
-                    rp: config.peri.unwrap(),
-                    mu: mu,
-                    h: None,
-                })
+            OrbitConfig { peri: Some(_), ..} => {
+                match config {
+                    OrbitConfig { apo: Some(_), .. } => {
+                        Ok(Orbit{
+                            ra: config.apo.unwrap(),
+                            rp: config.peri.unwrap(),
+                            mu: mu,
+                            h: rp_ra_to_h(&config.apo, &config.peri, &mu),
+                            ecc: (config.apo.unwrap() - config.peri.unwrap()) /
+                                (config.apo.unwrap() + config.peri.unwrap()),
+                        })
+                    },
+                    OrbitConfig { ecc: Some(_), ..} => {
+                        Ok(Orbit{
+                            ra: (config.peri.unwrap() * (config.ecc.unwrap() + 1.0) /
+                                 (config.ecc.unwrap() -1.0 )).abs(),
+                            rp: config.peri.unwrap(),
+                            mu: mu,
+                            h: (config.peri.unwrap() * mu * (1.0 + config.ecc.unwrap())).sqrt(),
+                            ecc: config.ecc.unwrap(),
+                        })
+                    },
+                    OrbitConfig { vel_p: Some(_), ..} => {
+                        Ok(Orbit{
+                            ra: (config.peri.unwrap() *
+                                 config.vel_p.unwrap()).powi(2) /
+                                (mu * (1.0 - (config.peri.unwrap() *
+                                            config.vel_p.unwrap()).powi(2) /
+                                     (config.peri.unwrap() * mu ) - 1.0)),
+                            rp: config.peri.unwrap(),
+                            mu: mu,
+                            h: config.peri.unwrap() * config.vel_p.unwrap(),
+                            ecc: (config.peri.unwrap() * config.vel_p.unwrap()).powi(2) /
+                                (config.peri.unwrap() * mu ) - 1.0,
+                        })
+                    },
+                    OrbitConfig { vel_a: Some(_), .. }=> {
+                        Err(OrbError::IncompatibleArgs)
+                    },
+                    _ => Err(OrbError::TooFewArgs),
+                }
             },
-            OrbitConfig {peri: Some(_), ecc: Some(_), ..} => {
-                Ok(Orbit{
-                    ra: (config.peri.unwrap() * (config.ecc.unwrap() + 1.0) /
-                               (config.ecc.unwrap() -1.0 )).abs(),
-                    rp: config.peri.unwrap(),
-                    mu: mu,
-                    h: None,
-                })
+            OrbitConfig { apo: Some(_), ..} => {
+                match config {
+                    OrbitConfig{ecc: Some(_), ..} =>{
+                        Ok(Orbit{
+                            ra: config.peri.unwrap(),
+                            rp: (config.apo.unwrap() * ( 1.0 - config.ecc.unwrap()) /
+                                 (config.ecc.unwrap() + 1.0)).abs(),
+                            mu: mu,
+                            h: (mu * config.apo.unwrap() * (1.0 - config.ecc.unwrap())).sqrt(),
+                            ecc: config.ecc.unwrap(),
+                        })
+                    },
+                    OrbitConfig{vel_a: Some(_), ..} =>{
+                        Ok(Orbit{
+                            ra: config.apo.unwrap(),
+                            rp: (config.apo.unwrap() * config.vel_a.unwrap()).powi(2) /
+                                (config.apo.unwrap() * (config.vel_a.unwrap()).powi(2) -
+                                2.0 * mu),
+                            mu: mu,
+                            h: config.apo.unwrap() * config.vel_a.unwrap(),
+                            ecc: 1.0 - (config.apo.unwrap() * config.vel_a.unwrap()).powi(2) /
+                                (config.apo.unwrap() * mu),
+                        })
+                    },
+                    OrbitConfig{vel_p: Some(_), ..} =>{
+                        Err(OrbError::IncompatibleArgs)
+                    }
+                    _=> Err(OrbError::TooFewArgs),
+                }
             },
-            OrbitConfig {peri: Some(_), vel_peri1: Some(_), .. } => {
-                Ok(Orbit{
-                    // PLACEHOLDER VALUE START
-                    ra: 3.5,
-                    // PLACEHOLDER VALUE END
-                    rp: config.peri.unwrap(),
-                    mu: mu,
-                    h: None,
-                })
-            },
-            OrbitConfig {apo: Some(_), ecc: Some(_), ..} => {
-                Ok(Orbit{
-                    ra: config.apo.unwrap(),
-                    rp: (config.apo.unwrap() * ( 1.0 - config.ecc.unwrap()) /
-                                (config.ecc.unwrap() + 1.0)).abs(),
-                    mu: mu,
-                    h: None,
-                })
-            },
-            OrbitConfig {apo: Some(_), vel_apo1: Some(_), .. } => {
-                Ok(Orbit{
-                    ra: config.apo.unwrap(),
-                    // PLACEHOLDER VALUE START
-                    rp: 3.5,
-                    // PLACEHOLDER VALUE END
-                    mu: mu,
-                    h: None,
-                })
-            },
-            OrbitConfig {apo: Some(_), vel_peri1: Some(_), .. } |
-            OrbitConfig {ecc: Some(_), vel_peri1: Some(_), .. } |
-            OrbitConfig {ecc: Some(_), vel_apo1: Some(_), .. } |
-            OrbitConfig {peri: Some(_), vel_apo1: Some(_), .. } => {
-                Err(OrbError::IncompatibleArgs)
-            },
-            _ => {
-                Err(OrbError::TooFewArgs)
-            },
+            _ => Err(OrbError::TooFewArgs),
         };
         return orbit.unwrap()
     }
 
-    fn angular_momentum(&mut self) {
-        self.h = Some((2.0 * self.mu).sqrt() * ((self.rp * self.ra) /
-                                               (self.rp + self.ra)).sqrt());
-    }
 
     fn orb_period(&self) -> f32 {
         let period = 2.0 * PI / self.mu.sqrt() * ((self.rp + self.ra) /
-                                                  2.0).powf(3.0 / 2.0);
+                                              2.0).powf(3.0 / 2.0);
         return period
     }
+}
+
+
+fn rp_ra_to_h(peri: &Option<f32>, apo: &Option<f32>, mu: &f32) -> f32 {
+    let rp = peri.expect("Periapsis altitude must not be \"None\"!");
+    let ra = apo.expect("Apoapsis altitude must not be \"None\"!");
+    let h = (2.0 * mu).sqrt() * ((rp * ra) / (rp + ra)).sqrt();
+    return h
 }
 
 fn find_mu(spk_id: &Option<i32> ) -> f32 {
@@ -202,9 +225,9 @@ fn find_mu(spk_id: &Option<i32> ) -> f32 {
 */*/
 
 fn process_inputs(mu: f32) -> (Orbit, Orbit) {
-    let orbit1 = Orbit { rp: 1507.0, ra: 1507.0, mu: mu, h: Some(0.0)};
+    let orbit1 = Orbit { rp: 1507.0, ra: 1507.0, ecc: 3.1,  mu: mu, h: 0.0};
     // Molniya orbit
-    let orbit2 = Orbit { rp: 1507.0, ra: 39305.0, mu: mu, h: Some(0.0)};
+    let orbit2 = Orbit { rp: 1507.0, ra: 39305.0,ecc: 2.4,  mu: mu, h: 0.0};
     return (orbit1, orbit2)
 }
 
@@ -220,15 +243,14 @@ fn main() {
 
     let example = OrbitConfig {
         peri: Some(1507.0),
-        apo: Some(39305.0),
+        apo: Some(1507.0),
         ecc: None,
-        vel_peri1: None,
-        vel_apo1: None,
+        vel_p: None,
+        vel_a: None,
         spk_id: Some(3),
     };
 
     let mut orbit3 = Orbit::from_config(example);
-    orbit3.angular_momentum();
     let period = orbit3.orb_period();
     println!("Orbit3: {:?}", orbit3);
     println!("Period: {:?}", period)

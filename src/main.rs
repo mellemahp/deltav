@@ -3,26 +3,27 @@ extern crate structopt;
 #[macro_use]
 extern crate serde_derive;
 extern crate toml;
-#[allow(unused_imports)]
+
 use structopt::StructOpt;
-use std::path::PathBuf;
 use std::f32;
-use std::f32::consts::PI;
+//use std::f32::consts::PI;
 use std::fs::File;
 use std::io::prelude::*;
 use std::process;
+use std::path::PathBuf;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "Delta V Calculator",
-            author = "Hunter Mellema",
-            about = "A simple command line tool to calculate Hohmann transfers")]
+            about = "A simple co-planar hohmann transfer calculator")]
 struct Opt {
-    #[structopt(long = "d",
+    #[structopt(short = "d",
+                long = "debug",
                 help = "Activate debug mode")]
     debug: bool,
 
     #[structopt(long = "in",
                 help = "Input file (TOML format)",
+                default_value = "config.toml",
                 parse(from_os_str))]
     input: PathBuf,
 
@@ -31,25 +32,7 @@ struct Opt {
                 parse(from_os_str))]
     output: Option<PathBuf>,
 
-    #[structopt(long = "cb",
-                default_value = "3",
-                help ="CB system is defined around (horizons ID)")]
-    spk_id: i32,
-
-    #[structopt(subcommand)]
-    unit_sys: Units,
 }
-
-#[derive(StructOpt, Debug)]
-enum Units {
-    #[structopt(name = "km")]
-    Kilometers,
-    #[structopt(name = "m")]
-    Meters,
-    #[structopt(name = "au")]
-    AstroUnit,
-}
-
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -71,7 +54,7 @@ impl Config {
     /// Attempt to load and parse the config file into our Config struct.
     /// If a file cannot be found, return an error to the user.
     /// If we find a file but cannot parse it, panic
-    pub fn parse(path: String) -> Config {
+    pub fn parse(path: PathBuf) -> Config {
         let mut config_toml = String::new();
 
         let mut file = match File::open(&path) {
@@ -86,9 +69,8 @@ impl Config {
                                          err));
         let config: Config =  match toml::from_str(&config_toml) {
                 Ok(table) => table,
-                Err(err) => {
-                    println!("failed to parse TOML configuration '{}': {}", path,
-                             err);
+                Err(_) => {
+                    println!("failed to parse TOML configuration");
                     process::exit(2);
                 }
         };
@@ -194,12 +176,12 @@ impl Orbit {
         return orbit.unwrap()
     }
 
-
+/*
     fn orb_period(&self) -> f32 {
         let period = 2.0 * PI / self.mu.sqrt() * ((self.rp + self.ra) /
                                               2.0).powf(3.0 / 2.0);
         return period
-    }
+    } */
 }
 
 
@@ -228,51 +210,6 @@ fn find_mu(spk_id: &Option<i32> ) -> f32 {
     mu
 }
 
-/*
-// Attempt to load and parse the config file into our Config struct.
-/// If a file cannot be found, return a default Config.
-/// If we find a file but cannot parse it, panic
-/*pub fn parse_toml(Pathbuf) -> Config {
-    let mut file = match File::open(&path) {
-        Ok(file) => file,
-        Err(_)  => {
-            error!("Could not find config file, using default!");
-            return Config::new();
-        }
-    };
-
-    file.read_to_string(&mut config_toml)
-            .unwrap_or_else(|err| panic!("Error while reading config: [{}]", err));
-
-    let mut parser = Parser::new(&config_toml);
-    let toml = parser.parse();
-
-    if toml.is_none() {
-        for err in &parser.errors {
-            let (loline, locol) = parser.to_linecol(err.lo);
-            let (hiline, hicol) = parser.to_linecol(err.hi);
-            println!("{}:{}:{}-{}:{} error: {}",
-                     path, loline, locol, hiline, hicol, err.desc);
-        }
-        panic!("Exiting server");
-    }
-
-    let config = Value::Table(toml.unwrap());
-    match toml::decode(config) {
-        Some(t) => t,
-        None => panic!("Error while deserializing config")
-    }
-}
-*/*/
-/*
-fn process_inputs(mu: f32) -> (Orbit, Orbit) {
-    let orbit1 = Orbit { rp: 1507.0, ra: 1507.0, ecc: 3.1,  mu: mu, h: 0.0};
-    // Molniya orbit
-    let orbit2 = Orbit { rp: 1507.0, ra: 39305.0,ecc: 2.4,  mu: mu, h: 0.0};
-    return (orbit1, orbit2)
-}
-*/
-
 fn find_transfer_ellipse(orbit1: &Orbit, orbit2: &Orbit) -> Orbit {
     let config = OrbitConfig{
         peri: Some(orbit1.rp),
@@ -287,35 +224,12 @@ fn find_transfer_ellipse(orbit1: &Orbit, orbit2: &Orbit) -> Orbit {
 
 
 fn main() {
-    // let opt = Opt::from_args();
-
-    let example = OrbitConfig {
-        peri: Some(1507.0),
-        apo: Some(1507.0),
-        ecc: None,
-        vel_p: None,
-        vel_a: None,
-        spk_id: Some(3),
-    };
-    let example2 = OrbitConfig {
-        peri: Some(2000.0),
-        apo: Some(5000.0),
-        ecc: None,
-        vel_p: None,
-        vel_a: None,
-        spk_id: Some(3),
-    };
-
-    let orbit1 = Orbit::from_config(example);
-    let orbit2 = Orbit::from_config(example2);
-    let period1 = orbit1.orb_period();
-    let period2 = orbit2.orb_period();
+    let opt = Opt::from_args();
+    let config = Config::parse(opt.input);
+    let orbit1 = Orbit::from_config(config.orbit1);
+    let orbit2 = Orbit::from_config(config.orbit2);
     let transfer = find_transfer_ellipse(&orbit1, &orbit2);
     println!("Orbit1: {:?}", orbit1);
     println!("Orbit2: {:?}", orbit2);
-    println!("TransferOrbit: {:?}", transfer);
-    let filename = String::from("config.toml");
-    let config = Config::parse(filename);
-    println!("orbit1!: {:?}", config.orbit1);
-    println!("orbit2!: {:?}", config.orbit2);
+    println!("Transfer: {:?}", transfer);
 }

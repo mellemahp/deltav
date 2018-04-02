@@ -1,10 +1,16 @@
 #[macro_use]
 extern crate structopt;
-
+#[macro_use]
+extern crate serde_derive;
+extern crate toml;
+#[allow(unused_imports)]
 use structopt::StructOpt;
 use std::path::PathBuf;
 use std::f32;
 use std::f32::consts::PI;
+use std::fs::File;
+use std::io::prelude::*;
+use std::process;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "Delta V Calculator",
@@ -44,7 +50,14 @@ enum Units {
     AstroUnit,
 }
 
-#[derive(Debug)]
+
+#[derive(Deserialize, Debug)]
+pub struct Config {
+    orbit1: OrbitConfig,
+    orbit2: OrbitConfig,
+}
+
+#[derive(Deserialize, Debug)]
 struct OrbitConfig {
     peri: Option<f32>,
     apo: Option<f32>,
@@ -54,14 +67,42 @@ struct OrbitConfig {
     spk_id: Option<i32>,
 }
 
+impl Config {
+    /// Attempt to load and parse the config file into our Config struct.
+    /// If a file cannot be found, return an error to the user.
+    /// If we find a file but cannot parse it, panic
+    pub fn parse(path: String) -> Config {
+        let mut config_toml = String::new();
+
+        let mut file = match File::open(&path) {
+            Ok(file) => file,
+            Err(_)  => {
+                panic!("Could not find config file! Please enter valid path.");
+            }
+        };
+
+        file.read_to_string(&mut config_toml)
+            .unwrap_or_else(|err| panic!("Error while reading config: [{}]",
+                                         err));
+        let config: Config =  match toml::from_str(&config_toml) {
+                Ok(table) => table,
+                Err(err) => {
+                    println!("failed to parse TOML configuration '{}': {}", path,
+                             err);
+                    process::exit(2);
+                }
+        };
+
+        return config
+    }
+}
+
+
 #[derive(Debug)]
 enum OrbError {
     IncompatibleArgs,
     TooFewArgs,
-    Borked,
 }
-
-pub type OrbResult = Result< Orbit, OrbError>;
 
 #[derive(Debug)]
 struct Orbit {
@@ -75,7 +116,7 @@ struct Orbit {
 impl Orbit {
     fn from_config(config: OrbitConfig) -> Orbit {
         let mu = find_mu(&config.spk_id);
-        let mut orbit = match config {
+        let orbit = match config {
             OrbitConfig { peri: Some(_), ..} => {
                 match config {
                     OrbitConfig { apo: Some(_), .. } => {
@@ -223,23 +264,30 @@ fn find_mu(spk_id: &Option<i32> ) -> f32 {
     }
 }
 */*/
-
+/*
 fn process_inputs(mu: f32) -> (Orbit, Orbit) {
     let orbit1 = Orbit { rp: 1507.0, ra: 1507.0, ecc: 3.1,  mu: mu, h: 0.0};
     // Molniya orbit
     let orbit2 = Orbit { rp: 1507.0, ra: 39305.0,ecc: 2.4,  mu: mu, h: 0.0};
     return (orbit1, orbit2)
 }
+*/
 
+fn find_transfer_ellipse(orbit1: &Orbit, orbit2: &Orbit) -> Orbit {
+    let config = OrbitConfig{
+        peri: Some(orbit1.rp),
+        apo: Some(orbit2.ra),
+        spk_id: Some(3),
+        ecc: None, vel_p: None, vel_a: None,
+    };
+
+    let transfer = Orbit::from_config(config);
+    return transfer
+}
 
 
 fn main() {
     // let opt = Opt::from_args();
-    let x = Some(4);
-    let mu = find_mu(&x);
-    let orbs = process_inputs(mu);
-    println!("Orbit1: {:?}", orbs.0);
-    println!("Orbit2: {:?}", orbs.1);
 
     let example = OrbitConfig {
         peri: Some(1507.0),
@@ -249,9 +297,25 @@ fn main() {
         vel_a: None,
         spk_id: Some(3),
     };
+    let example2 = OrbitConfig {
+        peri: Some(2000.0),
+        apo: Some(5000.0),
+        ecc: None,
+        vel_p: None,
+        vel_a: None,
+        spk_id: Some(3),
+    };
 
-    let mut orbit3 = Orbit::from_config(example);
-    let period = orbit3.orb_period();
-    println!("Orbit3: {:?}", orbit3);
-    println!("Period: {:?}", period)
+    let orbit1 = Orbit::from_config(example);
+    let orbit2 = Orbit::from_config(example2);
+    let period1 = orbit1.orb_period();
+    let period2 = orbit2.orb_period();
+    let transfer = find_transfer_ellipse(&orbit1, &orbit2);
+    println!("Orbit1: {:?}", orbit1);
+    println!("Orbit2: {:?}", orbit2);
+    println!("TransferOrbit: {:?}", transfer);
+    let filename = String::from("config.toml");
+    let config = Config::parse(filename);
+    println!("orbit1!: {:?}", config.orbit1);
+    println!("orbit2!: {:?}", config.orbit2);
 }

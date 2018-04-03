@@ -169,7 +169,7 @@ impl Orbit {
     fn orb_period(&self) -> f32 {
         let period = 2.0 * PI / self.mu.sqrt() * ((self.rp + self.ra) /
                                                   2.0).powf(3.0 / 2.0);
-        return period
+        return periody
 
     }
 }

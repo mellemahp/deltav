@@ -96,17 +96,23 @@ struct Orbit {
 }
 
 impl Orbit {
+    fn from_apses(ra: &f32, rp: &f32, mu: &f32) -> Orbit {
+        let orbit = Orbit {
+            ra: *ra,
+            rp: *rp,
+            mu: *mu,
+            h: (2.0 * *mu).sqrt() * ((*rp * *ra) / (*rp + *ra)).sqrt(),
+            ecc: (*ra - *rp) / (*ra + *rp),
+        };
+
+        return orbit
+    }
+
     fn from_config(config: OrbitConfig) -> Orbit {
         let mu = find_mu(&config.spk_id);
         let orbit = match config {
             OrbitConfig { peri: Some(rp), apo: Some(ra), ..} => {
-                Ok(Orbit{
-                    ra: rp,
-                    rp: ra,
-                    mu: mu,
-                    h: (2.0 * mu).sqrt() * ((rp * ra) / (rp + ra)).sqrt(),
-                    ecc: (ra - rp) / (ra + rp),
-                })
+                Ok(Orbit::from_apses(&ra, &rp, &mu))
             },
             OrbitConfig { peri: Some(rp), ..} => {
                 match config {
@@ -170,7 +176,6 @@ impl Orbit {
         let period = 2.0 * PI / self.mu.sqrt() * ((self.rp + self.ra) /
                                                   2.0).powf(3.0 / 2.0);
         return period
-
     }
 }
 
@@ -192,23 +197,22 @@ fn find_mu(spk_id: &Option<i32> ) -> f32 {
     mu
 }
 
-fn find_transfer_ellipse(orbit1: &Orbit, orbit2: &Orbit) -> Orbit {
-    let config = OrbitConfig{
-        peri: Some(orbit1.rp),
-        apo: Some(orbit2.ra),
-        spk_id: Some(3),
-        ecc: None, vel_p: None, vel_a: None,
+fn transfer_ellipse(orb1: &Orbit, orb2: &Orbit) -> Orbit {
+    let ratio_peri = (orb1.rp / orb2.rp) as i32;
+    let transfer = match ratio_peri {
+        0 => Orbit::from_apses(&orb2.ra, &orb1.rp, &orb1.mu), //Small to large
+        1 => Orbit::from_apses(&orb1.ra, &orb2.rp, &orb1.mu), //Large to small
+        _ => panic!("Could not find transfer ellipse!!!")
     };
-
-    let transfer = Orbit::from_config(config);
     return transfer
 }
+
 
 fn process_inputs(opt: Opt) {
     let config = Config::parse(opt.input);
     let orbit1 = Orbit::from_config(config.orbit1);
     let orbit2 = Orbit::from_config(config.orbit2);
-    let transfer = find_transfer_ellipse(&orbit1, &orbit2);
+    let transfer = transfer_ellipse(&orbit1, &orbit2);
     println!("Orbit1: {:?}", orbit1);
     println!("Orbit2: {:?}", orbit2);
     println!("Transfer: {:?}", transfer);

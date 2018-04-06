@@ -177,6 +177,12 @@ impl Orbit {
                                                   2.0).powf(3.0 / 2.0);
         return period
     }
+
+    fn vel_apses(&self) -> (f32, f32) {
+        let va = self.h / self.ra;
+        let vp = self.h / self.rp;
+        return (va, vp)
+    }
 }
 
 fn find_mu(spk_id: &Option<i32> ) -> f32 {
@@ -194,28 +200,52 @@ fn find_mu(spk_id: &Option<i32> ) -> f32 {
         8 => 6.809 * 10_f32.powi(6), // Neptune
         _ => panic!("Only SPKIDs 0-8 (and 301) are currently supported!"),
     };
-    mu
+    return mu
 }
 
-fn transfer_ellipse(orb1: &Orbit, orb2: &Orbit) -> Orbit {
-    let ratio_peri = (orb1.rp / orb2.rp) as i32;
-    let transfer = match ratio_peri {
-        0 => Orbit::from_apses(&orb2.ra, &orb1.rp, &orb1.mu), //Small to large
-        1 => Orbit::from_apses(&orb1.ra, &orb2.rp, &orb1.mu), //Large to small
-        _ => panic!("Could not find transfer ellipse!!!")
+#[derive(Debug)]
+struct DeltaV {
+    burn1: f32,
+    burn2: Option<f32>,
+    total: Option<f32>,
+}
+
+fn delta_v(orb1: &Orbit, orb2: &Orbit, transfer: &Orbit) -> DeltaV {
+    let (_, vp1) = orb1.vel_apses();
+    let (vpt, vat) = transfer.vel_apses();
+    let (va2, _) = orb2.vel_apses();
+    let mut delta = DeltaV {
+        burn1: (vpt - vp1),
+        burn2: Some(vat - va2),
+        total: None
     };
-    return transfer
+    delta.total = Some(delta.burn1.abs() + delta.burn2.unwrap().abs());
+    return delta
 }
-
 
 fn process_inputs(opt: Opt) {
     let config = Config::parse(opt.input);
     let orbit1 = Orbit::from_config(config.orbit1);
     let orbit2 = Orbit::from_config(config.orbit2);
-    let transfer = transfer_ellipse(&orbit1, &orbit2);
+    let ratio_peri = (orbit1.rp / orbit2.rp) as i32;
+    let transfer = match ratio_peri {
+        0 => Orbit::from_apses(&orbit2.ra, &orbit1.rp, &orbit1.mu), //Small to large
+        1 => Orbit::from_apses(&orbit1.ra, &orbit2.rp, &orbit1.mu), //Large to small
+        _ => panic!("Could not find transfer ellipse!!!")
+    };
+
+    let delta = match ratio_peri{
+        0 => delta_v(&orbit1, &orbit2, &transfer),
+        1 => delta_v(&orbit2, &orbit1, &transfer),
+        _ => panic!("Something is seriously borked..."),
+    };
+    let time = transfer.orb_period() / 2.0;
+
     println!("Orbit1: {:?}", orbit1);
     println!("Orbit2: {:?}", orbit2);
     println!("Transfer: {:?}", transfer);
+    println!("DeltaV: {:?}", delta);
+    println!("Time: {:?}", time)
 }
 
 fn main() {

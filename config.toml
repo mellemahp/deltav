@@ -1,7 +1,9 @@
 [orbit1]
 peri = 2000.0
 apo = 3000.0
+spk_id = 3
 
 [orbit2]
 peri = 3000.0
 apo = 4000.0
+spk_id = 3
